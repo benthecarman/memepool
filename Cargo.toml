@@ -8,3 +8,5 @@ authors = ["benthecarman <benthecarman@live.com>"]
 
 [dependencies]
 bitcoin = "0.29.2"
+rand = "^0.8"
+socks = "0.3"
