@@ -34,10 +34,20 @@ impl Mempool {
     /// Note that this doesn't propagate the transaction to other
     /// peers. To do that, [`broadcast`](crate::blockchain::Blockchain::broadcast) should be used.
     pub fn add_tx(&self, tx: Transaction) -> anyhow::Result<()> {
+        self.add_txs(&[tx])
+    }
+
+    /// Add a set of transactions to the mempool
+    ///
+    /// Note that this doesn't propagate the transactions to other
+    /// peers. To do that, [`broadcast`](crate::blockchain::Blockchain::broadcast) should be used.
+    pub fn add_txs(&self, txs: &[Transaction]) -> anyhow::Result<()> {
         let mut guard = self.0.write().map_err(|_| anyhow!("Failed to acquire write lock"))?;
 
-        guard.wtxids.insert(tx.wtxid(), tx.txid());
-        guard.txs.insert(tx.txid(), tx);
+        for tx in txs {
+            guard.wtxids.insert(tx.wtxid(), tx.txid());
+            guard.txs.insert(tx.txid(), tx.clone());
+        }
 
         Ok(())
     }

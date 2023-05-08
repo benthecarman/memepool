@@ -400,6 +400,7 @@ impl InvPeer for Peer {
         let num_txs = getdata.len();
         self.send(NetworkMessage::GetData(getdata))?;
 
+        let mut txs = Vec::with_capacity(num_txs);
         for _ in 0..num_txs {
             let tx = self
                 .recv("tx", Some(Duration::from_secs(TIMEOUT_SECS)))?
@@ -409,9 +410,10 @@ impl InvPeer for Peer {
                 _ => return Err(NetworkingError::InvalidResponse),
             };
 
-            if let Err(e) = self.mempool.add_tx(tx) {
-                println!("Error adding tx to mempool: {e:?}");
-            }
+            txs.push(tx);
+        }
+        if let Err(e) = self.mempool.add_txs(&txs) {
+            println!("Error adding txs to mempool: {e:?}");
         }
 
         Ok(())
