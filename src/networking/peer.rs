@@ -87,8 +87,6 @@ impl Peer {
         let responses: Arc<RwLock<ResponsesMap>> = Arc::new(RwLock::new(HashMap::new()));
         let connected = Arc::new(RwLock::new(true));
 
-        let mut locked_writer = writer.lock().unwrap();
-
         let reader_thread_responses = Arc::clone(&responses);
         let reader_thread_writer = Arc::clone(&writer);
         let reader_thread_mempool = Arc::clone(&mempool);
@@ -107,6 +105,7 @@ impl Peer {
         let timestamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs() as i64;
         let nonce = thread_rng().gen();
         let services = ServiceFlags::WITNESS;
+        let mut locked_writer = writer.lock().unwrap();
         let receiver = Address::new(&locked_writer.peer_addr()?, services);
         let sender = Address {
             services,
@@ -258,7 +257,7 @@ impl Peer {
                 raw_message.payload
             };
 
-            match in_message {
+            let result = match in_message {
                 NetworkMessage::Ping(nonce) => {
                     check_disconnect!(Self::_send(
                         &mut reader_thread_writer.lock().unwrap(),
@@ -296,17 +295,19 @@ impl Peer {
                         network.magic(),
                         NetworkMessage::GetData(get_data)
                     ));
+
+                    Ok(())
                 }
                 NetworkMessage::GetData(ref inv) => {
                     let (found, not_found): (Vec<_>, Vec<_>) = inv
                         .iter()
                         .map(|item| (*item, reader_thread_mempool.get_tx(item)))
-                        .partition(|(_, d)| d.is_some());
+                        .partition(|(_, d)| d.as_ref().unwrap_or(&None).is_some());
                     for (_, found_tx) in found {
                         check_disconnect!(Self::_send(
                             &mut reader_thread_writer.lock().unwrap(),
                             network.magic(),
-                            NetworkMessage::Tx(found_tx.unwrap()),
+                            NetworkMessage::Tx(found_tx.unwrap().unwrap()),
                         ));
                     }
 
@@ -319,8 +320,14 @@ impl Peer {
                             ),
                         ));
                     }
+
+                    Ok(())
                 }
-                _ => {}
+                _ => Ok(())
+            };
+
+            if let Err(e) = result {
+                println!("Error {:?}", e);
             }
 
             let message_resp = {
@@ -387,7 +394,7 @@ impl InvPeer for Peer {
             .iter()
             .cloned()
             .filter(
-                |item| matches!(item, Inventory::Transaction(txid) if !self.mempool.has_tx(txid)),
+                |item| matches!(item, Inventory::Transaction(txid) if !self.mempool.has_tx(txid).unwrap_or(false)),
             )
             .collect::<Vec<_>>();
         let num_txs = getdata.len();
@@ -402,14 +409,18 @@ impl InvPeer for Peer {
                 _ => return Err(NetworkingError::InvalidResponse),
             };
 
-            self.mempool.add_tx(tx);
+            if let Err(e) = self.mempool.add_tx(tx) {
+                println!("Error adding tx to mempool: {e:?}");
+            }
         }
 
         Ok(())
     }
 
     fn broadcast_tx(&self, tx: Transaction) -> Result<(), NetworkingError> {
-        self.mempool.add_tx(tx.clone());
+        if let Err(e) = self.mempool.add_tx(tx.clone()) {
+            println!("Error adding tx to mempool: {e:?}");
+        }
         self.send(NetworkMessage::Tx(tx))?;
 
         Ok(())

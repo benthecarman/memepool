@@ -15,6 +15,6 @@ fn main() {
 
     loop {
         std::thread::sleep(Duration::from_millis(1000));
-        println!("mempool size: {}", mempool.clone().iter_txs().len())
+        println!("mempool size: {}", mempool.clone().iter_txs().map(|l| l.len()).unwrap_or(0))
     }
 }
